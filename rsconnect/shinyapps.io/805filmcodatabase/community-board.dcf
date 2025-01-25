@@ -1,0 +1,12 @@
+name: community-board
+title: community-board
+username: 805filmcodatabase
+account: 805filmcodatabase
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 11391108
+bundleId: 9218605
+url: https://805filmco.shinyapps.io/community-board/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
