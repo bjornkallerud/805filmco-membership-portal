@@ -1,11 +1,12 @@
 library(shiny)
 library(shinydashboard)
+library(auth0)
 library(shinyalert)
 library(shinycssloaders)
 library(DT)
 library(tidyverse)
 
-shinyUI(
+auth0_ui(
   dashboardPage(title = "Membership Database",
                 dashboardHeader(
                   title = tags$div(

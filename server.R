@@ -1,7 +1,6 @@
-# on dev branch
-
 library(shiny)
 library(DT)
+library(auth0)
 library(googlesheets4)
 library(jsonlite)
 library(shinyalert)
@@ -18,7 +17,7 @@ make_list <- function(row) {
 
 board_entries <- lapply(1:nrow(db), make_list)
 
-shinyServer(function(input, output, session) {
+auth0_server(function(input, output, session) {
   
   df <- data.frame(
     type = unlist(lapply(board_entries, function(x) x$type)),
