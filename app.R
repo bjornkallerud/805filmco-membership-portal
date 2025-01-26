@@ -1,4 +1,4 @@
-# app.R
+# app.R (Version 2) 
 library(shiny)
 library(shinydashboard)
 library(shinyalert)
@@ -11,8 +11,8 @@ library(tidyverse)
 
 # ---- Google Sheets authentication & data reading ----
 gs4_auth(cache = ".secrets", email = "bjornkallerud@gmail.com")
-sht <- "https://docs.google.com/spreadsheets/d/1KRS6UUh2QBQpnCsDTKORLyssxoCX-dtayVfRFp7LfPo/edit#gid=0"
-db <- read_sheet(sht) %>%
+google_doc <- "https://docs.google.com/spreadsheets/d/1KRS6UUh2QBQpnCsDTKORLyssxoCX-dtayVfRFp7LfPo/edit#gid=0"
+db <- read_sheet(google_doc, sheet = "Community Board") %>%
   distinct()
 
 make_list <- function(row) {
@@ -32,116 +32,79 @@ ui <- dashboardPage(
     titleWidth = 350
   ),
   
-  dashboardSidebar(disable = TRUE),
+  # Sidebar with 3 menu items
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Community Board", tabName = "community_board", icon = icon("list")),
+      menuItem("Local Professionals", tabName = "local_professionals", icon = icon("user-friends")),
+      menuItem("Gear Database", tabName = "gear_database", icon = icon("cogs"))
+    )
+  ),
   
   dashboardBody(
     # Use external CSS
     tags$head(
       tags$link(rel = "stylesheet", type = "text/css", href = "styles.css")
     ),
-    
     withMathJax(),
     
-    fluidRow(
-      column(width = 1),
-      column(
-        width = 10,
-        tabBox(
-          title = "Community Board and Posting", id = "tabset1", width = 12,
-          
-          tabPanel("Community Board", 
-                   verbatimTextOutput("user_info"),
-                   DTOutput("mytable")
-          ),
-          
-          tabPanel("Post a Job",
-                   fluidRow(
-                     column(
-                       width = 12,
-                       h2("Post to Community Board"),
-                       selectInput("post_type", "Type:", 
-                                   choices = c("Job", "Office", "Festival", "Other")
-                       ),
-                       
-                       # ---- Conditional Panels for Different Post Types ----
-                       conditionalPanel(
-                         condition = "input.post_type == 'Job'",
-                         fluidRow(
-                           column(width = 4, textInput("post_job_title", "Post Title:")),
-                           column(width = 4, textInput("post_job_dates", "Date info:"))
-                         ),
-                         fluidRow(
-                           column(width = 4, textInput("post_job_rate", "Rate Info:")),
-                           column(width = 4, textInput("post_job_contact", "Contact Info:"))
-                         ),
-                         fluidRow(
-                           column(width = 8, 
-                                  textAreaInput("post_job_desc", "Job Description:",
-                                                height = "150px", width = "650px"))
-                         )
-                       ),
-                       
-                       conditionalPanel(
-                         condition = "input.post_type == 'Office'",
-                         fluidRow(
-                           column(width = 4, textInput("post_office_title", "Post Title:")),
-                           column(width = 4, textInput("post_office_cost", "Cost:"))
-                         ),
-                         fluidRow(
-                           column(width = 4, textInput("post_office_contact", "Contact Info:"))
-                         ),
-                         fluidRow(
-                           column(width = 8, 
-                                  textAreaInput("post_office_desc", "Description:",
-                                                height = "150px", width = "650px"))
-                         )
-                       ),
-                       
-                       conditionalPanel(
-                         condition = "input.post_type == 'Festival'",
-                         fluidRow(
-                           column(width = 4, textInput("post_fest_title", "Post Title:")),
-                           column(width = 4, textInput("post_fest_due_dates", "Festival Deadlines:"))
-                         ),
-                         fluidRow(
-                           column(width = 4, textInput("post_fest_link", "Link:")),
-                           column(width = 4, textInput("post_fest_contact", "Contact Info:"))
-                         ),
-                         fluidRow(
-                           column(width = 8, 
-                                  textAreaInput("post_fest_desc", "Description:", 
-                                                height = "150px", width = "650px"))
-                         )
-                       ),
-                       
-                       conditionalPanel(
-                         condition = "input.post_type == 'Other'",
-                         fluidRow(
-                           column(width = 4, textInput("post_other_title", "Post Title:")),
-                           column(width = 4, textInput("post_other_contact", "Contact Info:"))
-                         ),
-                         fluidRow(
-                           column(width = 8, 
-                                  textAreaInput("post_other_desc", "Description:", 
-                                                height = "150px", width = "650px"))
-                         )
-                       ),
-                       
-                       fluidRow(
-                         column(
-                           width = 8,
-                           actionButton("btn", "Submit", icon = icon("paper-plane"),
-                                        style = "color: #fff; background-color: #113140; 
-                                                 border-color: #2e6da4", 
-                                        width = "100%")
-                         )
-                       )
-                     )
-                   )
+    # Main tab items
+    tabItems(
+      
+      # --- Community Board ---
+      tabItem(
+        tabName = "community_board",
+        fluidRow(
+          column(
+            width = 12,
+            tabBox(
+              title = "Community Board", 
+              id    = "tabCommunity", 
+              width = 12,
+              
+              # The board itself
+              tabPanel("Community Board",
+                       verbatimTextOutput("user_info"),
+                       DTOutput("mytable"),
+                       br(),
+                       # Instead of a big set of inputs, use a button that opens a modal:
+                       actionButton("open_modal", "Add a New Post", icon = icon("plus"),
+                                    style = "color: #fff; background-color: #113140; border-color: #2e6da4")
+              ),
+              
+              # We can add more sub-tabs here if desired, but the main difference
+              # is that we do not fill them with big forms.
+              tabPanel("Guidelines", 
+                       p("Here you could place additional guidelines or rules for posting."))
+            )
           )
         )
       ),
-      column(width = 1)
+      
+      # --- Local Professionals ---
+      tabItem(
+        tabName = "local_professionals",
+        fluidRow(
+          column(
+            width = 12,
+            tabBox(
+              title = "Local Professionals", id = "tabLocalPros", width = 12,
+              tabPanel("Coming Soon", "This section will be filled out later.")
+            )
+          )
+        )
+      ),
+      
+      # --- Gear Database ---
+      tabItem(
+        tabName = "gear_database",
+        fluidRow(
+          column(width = 12, 
+                 h2("Gear Database"),
+                 p("Coming soon!")
+          )
+        )
+      )
     )
   )
 )
@@ -149,9 +112,9 @@ ui <- dashboardPage(
 # ---- Define Server ----
 server <- function(input, output, session) {
   
-  # print user info
+  # Print user info from Auth0
   output$user_info <- renderPrint({
-    session$userData$auth0_info$name 
+    session$userData$auth0_info$name
   })
   
   # Build the DataFrame for table display
@@ -246,63 +209,155 @@ server <- function(input, output, session) {
     )
   })
   
-  # Handle "Post a Job" (or other) submission
-  observeEvent(input$btn, {
-    # Build the list based on type
-    if (input$post_type == "Job") {
-      master_list <- list(
-        type    = "Job",
-        title   = input$post_job_title,
-        dates   = input$post_job_dates,
-        rate    = input$post_job_rate,
-        contact = input$post_job_contact,
-        desc    = input$post_job_desc
+  #-------------------------------------------------------
+  # A more elegant approach: Show a modal for new posts
+  #-------------------------------------------------------
+  # 1) Observe the "Add a New Post" button
+  observeEvent(input$open_modal, {
+    showModal(
+      modalDialog(
+        title = "Add a New Community Post",
+        # We can nest everything in fluidRows
+        fluidRow(
+          column(
+            width = 6,
+            selectInput("modal_post_type", "Type:",
+                        choices = c("Job", "Office", "Festival", "Other"))
+          )
+        ),
+        
+        # Now show fields conditionally based on the selected type
+        conditionalPanel(
+          "input.modal_post_type == 'Job'",
+          fluidRow(
+            column(width = 6, textInput("modal_job_title", "Job Title:")),
+            column(width = 6, textInput("modal_job_dates", "Dates:"))
+          ),
+          fluidRow(
+            column(width = 6, textInput("modal_job_rate", "Rate:")),
+            column(width = 6, textInput("modal_job_contact", "Contact Info:"))
+          ),
+          fluidRow(
+            column(width = 12, textAreaInput("modal_job_desc", "Job Description:", 
+                                             height = "100px"))
+          )
+        ),
+        
+        conditionalPanel(
+          "input.modal_post_type == 'Office'",
+          fluidRow(
+            column(width = 6, textInput("modal_office_title", "Office Title:")),
+            column(width = 6, textInput("modal_office_cost", "Cost:"))
+          ),
+          fluidRow(
+            column(width = 6, textInput("modal_office_contact", "Contact Info:"))
+          ),
+          fluidRow(
+            column(width = 12, textAreaInput("modal_office_desc", "Description:", 
+                                             height = "100px"))
+          )
+        ),
+        
+        conditionalPanel(
+          "input.modal_post_type == 'Festival'",
+          fluidRow(
+            column(width = 6, textInput("modal_fest_title", "Festival Title:")),
+            column(width = 6, textInput("modal_fest_due", "Deadline:"))
+          ),
+          fluidRow(
+            column(width = 6, textInput("modal_fest_link", "Link:")),
+            column(width = 6, textInput("modal_fest_contact", "Contact Info:"))
+          ),
+          fluidRow(
+            column(width = 12, textAreaInput("modal_fest_desc", "Description:", 
+                                             height = "100px"))
+          )
+        ),
+        
+        conditionalPanel(
+          "input.modal_post_type == 'Other'",
+          fluidRow(
+            column(width = 6, textInput("modal_other_title", "Post Title:")),
+            column(width = 6, textInput("modal_other_contact", "Contact Info:"))
+          ),
+          fluidRow(
+            column(width = 12, textAreaInput("modal_other_desc", "Description:", 
+                                             height = "100px"))
+          )
+        ),
+        
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton("submit_modal", "Submit", icon = icon("paper-plane"),
+                       style = "color: #fff; background-color: #113140; 
+                                border-color: #2e6da4")
+        ),
+        size = "m",
+        easyClose = FALSE
       )
-    } else if (input$post_type == "Office") {
-      master_list <- list(
-        type    = "Office",
-        title   = input$post_office_title,
-        cost    = input$post_office_cost,
-        contact = input$post_office_contact,
-        desc    = input$post_office_desc
-      )
-    } else if (input$post_type == "Festival") {
-      master_list <- list(
-        type      = "Festival",
-        title     = input$post_fest_title,
-        due_dates = input$post_fest_due_dates,
-        link      = input$post_fest_link,
-        contact   = input$post_fest_contact,
-        desc      = input$post_fest_desc
-      )
-    } else if (input$post_type == "Other") {
-      master_list <- list(
-        type    = "Other",
-        title   = input$post_other_title,
-        contact = input$post_other_contact,
-        desc    = input$post_other_desc
-      )
-    } else {
-      shinyalert("Error", "Unknown post type selected.", type = "error")
-      return(NULL)
+    )
+  })
+  
+  # 2) Observe the submission button in the modal
+  observeEvent(input$submit_modal, {
+    
+    # Build the list according to the chosen type
+    new_post <- switch(input$modal_post_type,
+                       "Job" = list(
+                         type    = "Job",
+                         title   = input$modal_job_title,
+                         dates   = input$modal_job_dates,
+                         rate    = input$modal_job_rate,
+                         contact = input$modal_job_contact,
+                         desc    = input$modal_job_desc
+                       ),
+                       "Office" = list(
+                         type    = "Office",
+                         title   = input$modal_office_title,
+                         cost    = input$modal_office_cost,
+                         contact = input$modal_office_contact,
+                         desc    = input$modal_office_desc
+                       ),
+                       "Festival" = list(
+                         type      = "Festival",
+                         title     = input$modal_fest_title,
+                         due_dates = input$modal_fest_due,
+                         link      = input$modal_fest_link,
+                         contact   = input$modal_fest_contact,
+                         desc      = input$modal_fest_desc
+                       ),
+                       "Other" = list(
+                         type    = "Other",
+                         title   = input$modal_other_title,
+                         contact = input$modal_other_contact,
+                         desc    = input$modal_other_desc
+                       )
+    )
+    
+    # Simple validation (optional)
+    if (is.null(new_post$title) || new_post$title == "") {
+      shinyalert("Error", "Please enter a title.", type = "error")
+      return()
     }
     
     # Convert to JSON and append to Google Sheet
     df_append <- data.frame(
-      entries = paste0("'", toJSON(master_list), "'")
+      entries = paste0("'", toJSON(new_post), "'")
     )
     sheet_append(sht, df_append)
     
-    shinyalert("Thank you!", 
-               "Your post has been added to the board", 
-               type = "success")
+    # Hide the modal
+    removeModal()
     
-    # Optionally re-load data here if you want the table to refresh immediately
+    shinyalert("Thank you!", "Your post has been added to the board", type = "success")
+    
+    # Optionally re-load data and re-render the table here
     # db <<- read_sheet(sht) %>% distinct()
     # board_entries <<- lapply(seq_len(nrow(db)), make_list)
     # output$mytable <- renderDT({ ... })
   })
+  
 }
 
-# ---- Run the App ----
+# ---- Run the App with Auth0 ----
 shinyAppAuth0(ui, server)
