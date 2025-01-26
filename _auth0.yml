@@ -5,3 +5,4 @@ auth0_config:
   credentials:
     key: !expr Sys.getenv("AUTH0_KEY")
     secret: !expr Sys.getenv("AUTH0_SECRET")
+scope: "openid profile email"
