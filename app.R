@@ -4,9 +4,10 @@ library(shinydashboard)
 library(shinyalert)
 library(shinycssloaders)
 library(DT)
-library(tidyverse)
 library(googlesheets4)
 library(jsonlite)
+library(auth0)
+library(tidyverse)
 
 # ---- Google Sheets authentication & data reading ----
 gs4_auth(cache = ".secrets", email = "bjornkallerud@gmail.com")
@@ -49,6 +50,7 @@ ui <- dashboardPage(
           title = "Community Board and Posting", id = "tabset1", width = 12,
           
           tabPanel("Community Board", 
+                   verbatimTextOutput("user_info"),
                    DTOutput("mytable")
           ),
           
@@ -146,6 +148,11 @@ ui <- dashboardPage(
 
 # ---- Define Server ----
 server <- function(input, output, session) {
+  
+  # print user info
+  output$user_info <- renderPrint({
+    session$userData$auth0_info$name 
+  })
   
   # Build the DataFrame for table display
   df <- data.frame(
@@ -298,4 +305,4 @@ server <- function(input, output, session) {
 }
 
 # ---- Run the App ----
-shinyApp(ui = ui, server = server)
+shinyAppAuth0(ui, server)
