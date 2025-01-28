@@ -89,6 +89,10 @@ ui <- dashboardPage(
   # ---------------- SIDEBAR ----------------
   dashboardSidebar(
     width = 185,
+    
+    # If actual user is Admin, show "view as" select
+    uiOutput("view_as_select"),
+    
     sidebarMenu(
       menuItem("Community Board", tabName = "community_board", icon = icon("list")),
       menuItem("Local Professionals", tabName = "local_professionals", icon = icon("user-friends")),
@@ -208,20 +212,66 @@ ui <- dashboardPage(
 # ------------------------------------------------------------------------------
 server <- function(input, output, session) {
   
-  # A) Determine user role (permissions) from Auth0
-  user_role <- reactive({
+  # --------------------------------
+  # A) Actual user role from Auth0
+  # --------------------------------
+  actual_user_role <- reactive({
     req(session$userData$auth0_info$name)
     user_email <- session$userData$auth0_info$name
     row_data <- members_df %>% filter(email == user_email)
+    
     if (nrow(row_data) == 0) {
-      "User"   # default if not found
+      "User"
     } else {
       row_data$permissions[1]  # e.g. "Admin", "Member", "Student", "User"
     }
   })
   
-  # B) Greet user by name
+  # --------------------------------
+  # B) If actual user is Admin, show a "view as ..." select
+  # --------------------------------
+  output$view_as_select <- renderUI({
+    role_now <- tolower(actual_user_role())
+    if (role_now == "admin") {
+      selectInput("view_as", 
+                  label = "View as:",
+                  choices = c("User", "Student", "Member"),
+                  selected = "Member")  # default selection if you wish
+    } else {
+      # Non-admin => show nothing
+      NULL
+    }
+  })
+  
+  # --------------------------------
+  # C) Effective role
+  # --------------------------------
+  # If not admin => just return actual role
+  # If admin => check the input$view_as (User, Student, Member)
+  # If user hasn't chosen anything, default to "Admin"
+  effective_role <- reactive({
+    real_role <- tolower(actual_user_role())
+    if (real_role != "admin") {
+      return(real_role)  # user is not admin => no simulation
+    } else {
+      # user is admin => check the "view_as" input
+      req(real_role)  # just in case
+      selected <- input$view_as  # "User", "Student", "Member" or NULL
+      if (is.null(selected)) {
+        # if not set => treat as "admin"
+        return("admin")
+      } else {
+        # Otherwise, use that
+        return(tolower(selected))
+      }
+    }
+  })
+  
+  # --------------------------------
+  # D) Greet user
+  # --------------------------------
   output$user_greeting <- renderText({
+    # Show actual name & role
     user_email <- session$userData$auth0_info$name
     row_data <- members_df %>% filter(email == user_email)
     if (nrow(row_data) == 0) {
@@ -235,11 +285,10 @@ server <- function(input, output, session) {
   # ============================================================================
   # COMMUNITY BOARD
   # ============================================================================
-  # 1) Post button vs. free message
+  # Show post button vs. free message based on effective role
   output$post_button_ui <- renderUI({
-    the_role <- tolower(user_role())
-    if (the_role %in% c("admin", "member")) {
-      # Paid membership => show button
+    role_now <- effective_role()  # "admin", "member", "student", "user"
+    if (role_now %in% c("admin", "member")) {
       tagList(
         p("Thank you for support as a paid member! 805 Film Co could not exist without you!",
           style = "font-weight: bold; color: #113140;"),
@@ -247,13 +296,12 @@ server <- function(input, output, session) {
                      style = "color: #fff; background-color: #113140; border-color: #2e6da4")
       )
     } else {
-      # Non-paid => upgrade
       p("Upgrade to a paid membership to be able to post to the community board.",
         style = "font-weight: bold; color: #113140;")
     }
   })
   
-  # 2) Data for Community Board table
+  # Build data for table
   cb_data <- data.frame(
     type  = unlist(lapply(board_entries, \(x) x$type)),
     title = unlist(lapply(board_entries, \(x) x$title))
@@ -261,27 +309,28 @@ server <- function(input, output, session) {
     setNames(c("Type", "Title"))
   
   output$cb_table <- renderDT({
-    datatable(cb_data,
-              rownames = FALSE,
-              selection = "single",
-              options = list(
-                dom        = "",
-                autoWidth  = TRUE,
-                pageLength = 100,
-                initComplete = JS(
-                  "setTimeout(function(){",
-                  "  var table = this.api();",
-                  "  $(this.api().table().body()).on('click', 'tr', function() {",
-                  "    if ($(this).hasClass('selected')) {",
-                  "      $(this).removeClass('selected');",
-                  "    } else {",
-                  "      table.$('tr.selected').removeClass('selected');",
-                  "      $(this).addClass('selected');",
-                  "    }",
-                  "  });",
-                  "}, 500);"
-                )
-              )
+    datatable(
+      cb_data,
+      rownames = FALSE,
+      selection = "single",
+      options = list(
+        dom = "",
+        autoWidth  = TRUE,
+        pageLength = 100,
+        initComplete = JS(
+          "setTimeout(function(){",
+          "  var table = this.api();",
+          "  $(this.api().table().body()).on('click', 'tr', function() {",
+          "    if ($(this).hasClass('selected')) {",
+          "      $(this).removeClass('selected');",
+          "    } else {",
+          "      table.$('tr.selected').removeClass('selected');",
+          "      $(this).addClass('selected');",
+          "    }",
+          "  });",
+          "}, 500);"
+        )
+      )
     )
   })
   
@@ -335,7 +384,7 @@ server <- function(input, output, session) {
     )
   })
   
-  # 3) The "Add New Post" modal
+  # Modal for adding a new post
   observeEvent(input$cb_new_post, {
     showModal(
       modalDialog(
@@ -407,8 +456,7 @@ server <- function(input, output, session) {
           actionButton("cb_submit_post", "Submit", icon = icon("paper-plane"),
                        style = "color: #fff; background-color: #113140; border-color: #2e6da4")
         ),
-        size = "m",
-        easyClose = FALSE
+        size = "m", easyClose = FALSE
       )
     )
   })
@@ -454,7 +502,7 @@ server <- function(input, output, session) {
       return()
     }
     
-    # Append
+    # Append to Google Sheets
     df_append <- data.frame(
       entries = paste0("'", toJSON(new_post), "'")
     )
@@ -468,10 +516,10 @@ server <- function(input, output, session) {
   # LOCAL PROFESSIONALS
   # ============================================================================
   
-  # Explanation text
+  # Explanation text (paid vs free)
   output$prof_explanation <- renderUI({
-    the_role <- tolower(user_role())
-    if (the_role %in% c("admin", "member")) {
+    role_now <- effective_role()  # "admin", "member", "student", "user"
+    if (role_now %in% c("admin", "member")) {
       p("Contact info is displayed for paid members. Thank you for your support!",
         style = "color: #113140; font-weight: bold;")
     } else {
@@ -480,7 +528,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # Filter the professionals
+  # Filter professionals
   prof_filtered <- reactive({
     data_in <- prof_db
     if (!is.null(input$prof_role) && length(input$prof_role) > 0) {
@@ -502,20 +550,15 @@ server <- function(input, output, session) {
     }
   })
   
-  # Show or hide contact columns
   output$prof_table <- renderTable({
-    the_role <- tolower(user_role())
+    role_now <- effective_role()
     data_show <- prof_filtered()
-    if (nrow(data_show) == 0) {
-      return(NULL)
-    }
+    if (nrow(data_show) == 0) return(NULL)
     
-    if (!(the_role %in% c("admin", "
-                          member"))) {
-      # Hide email, social, phone
+    # If role is not admin or member => hide contact
+    if (!(role_now %in% c("admin", "member"))) {
       data_show <- data_show %>% select(name, role, company, location, website)
     }
-    
     data_show
   })
 }
