@@ -5,7 +5,7 @@ account: 805filmco
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 13824303
-bundleId: 9711989
+bundleId: 9728314
 url: https://805filmco.shinyapps.io/805filmco-member-portal/
 version: 1
 asMultiple: FALSE

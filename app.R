@@ -59,10 +59,10 @@ ui <- dashboardPage(
   # ---------------- HEADER ----------------
   dashboardHeader(
     title = tags$div(
-      tags$img(src = "filmco.png", height = 40),
+      tags$img(src = "805filmco-logo.png", height = 50),
       style = "color: white; font-family:'Hammersmith One'; font-size:30px"
     ),
-    titleWidth = 350,
+    titleWidth = 250,
     
     # Show user's name/role
     tags$li(
