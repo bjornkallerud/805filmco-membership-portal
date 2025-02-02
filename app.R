@@ -149,7 +149,7 @@ ui <- dashboardPage(
                        fluidRow(
                          column(width = 4,
                                 selectizeInput("prof_role", "Role(s):",
-                                               choices = c("Director", "Producer", "DP", "Editor", "Writer",
+                                               choices = c("Director", "Producer", "DP", "Editor", "Writer", "Production Assistant (PA)",
                                                            "Camera Assistant", "1st AD", "2nd AD", "Photographer",
                                                            "Sound Engineer", "Sound Designer", "Sound Mixer", "Colorist",
                                                            "Actor", "Gaffer", "G&E", "Production Designer",
@@ -165,7 +165,7 @@ ui <- dashboardPage(
                                                            "Web Developer", "Critic", "Moderator", "Social Media Manager",
                                                            "Film Festival", "GFX", "Assistant Producer", "Model", 
                                                            "Events Manager", "Marketing", "PR", "Educator", 
-                                                           "Archival Producer", "Screenwriter"),
+                                                           "Archival Producer", "Screenwriter", "Steadicam Operator", "Other"),
                                                multiple = TRUE)
                          ),
                          column(width = 4,
