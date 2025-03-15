@@ -30,17 +30,21 @@ board_entries <- lapply(seq_len(nrow(db)), make_list)
 cb_data <- do.call(rbind, lapply(seq_along(board_entries), function(i) {
   entry <- board_entries[[i]]
   data.frame(
-    Date = if("date" %in% names(entry)) entry$date else NA,
     Type = entry$type,
     Title = entry$title,
+    Date = if("date" %in% names(entry)) entry$date else NA,
     row_order = i,
     stringsAsFactors = FALSE
   )
 }))
-# Parse dates using the new format "mm-dd-YYYY"
+# Parse dates using the format "mm-dd-YYYY"
 cb_data$Date_parsed <- as.Date(cb_data$Date, format = "%m-%d-%Y")
 cb_data_sorted <- cb_data %>% arrange(desc(Date_parsed), desc(row_order))
-cb_data_display <- cb_data_sorted %>% select(Date, Type, Title)
+cb_data_display <- cb_data_sorted %>% select(Type, Title, Date)
+
+# --- Members data (sheet: "Members") ---
+members_df <- read_sheet(google_doc, sheet = "Members") %>%
+  distinct()
 
 # --- Professionals data (sheet: "Professionals") ---
 prof_db <- read_sheet(google_doc, sheet = "Professionals") %>%
@@ -59,12 +63,14 @@ prof_db <- read_sheet(google_doc, sheet = "Professionals") %>%
   mutate(location = gsub("oxnard", "Oxnard", location)) %>%
   mutate(location = gsub("Carp$", "Carpinteria", location)) %>%
   mutate(location = gsub("SYV", "Santa Ynez", location)) %>%
-  mutate(location = gsub("Los Angeles", "LA", location))
-
-# --- Members data (sheet: "Members") ---
-members_df <- read_sheet(google_doc, sheet = "Members") %>%
-  distinct()
-# We assume columns: "email", "name", "permissions"
+  mutate(location = gsub("Los Angeles", "LA", location)) %>%
+  # Add membership flag: display the dark blue 805 Film Co logo if the email is in Members data
+  mutate(membership = ifelse(email %in% members_df$email,
+                             '<img src="805filmco-logomark.png" height="20">',
+                             "")) |> 
+  mutate(ordr = ifelse(membership != "", 1, 2)) |> 
+  arrange(ordr, name) |> 
+  select(-ordr)
 
 # ------------------------------------------------------------------------------
 # 2) Define UI
@@ -106,7 +112,7 @@ ui <- dashboardPage(
   dashboardSidebar(
     width = 185,
     
-    # If actual user is Admin, show "view as" select
+    # If actual user is Admin, show "view as ..." select
     uiOutput("view_as_select"),
     
     sidebarMenu(
@@ -123,7 +129,6 @@ ui <- dashboardPage(
     ),
     
     tabItems(
-      
       # COMMUNITY BOARD --------------------------------------------------------
       tabItem(
         tabName = "community_board",
@@ -132,7 +137,6 @@ ui <- dashboardPage(
             width = 12,
             tabBox(
               title = "Community Board", id = "tabCommunity", width = 12,
-              
               tabPanel("Community Board",
                        uiOutput("post_button_ui"),
                        br(),
@@ -146,14 +150,12 @@ ui <- dashboardPage(
                        DTOutput("cb_table"),
                        br()
               ),
-              
               tabPanel("Guidelines", 
                        p("Here you could place additional guidelines or rules for posting."))
             )
           )
         )
       ),
-      
       # LOCAL PROFESSIONALS ---------------------------------------------------
       tabItem(
         tabName = "local_professionals",
@@ -164,11 +166,9 @@ ui <- dashboardPage(
               title = "Local Professionals",
               id    = "tabLocalPros",
               width = 12,
-              
               tabPanel("Professional Database",
                        uiOutput("prof_explanation"),
                        br(),
-                       
                        fluidRow(
                          column(width = 4,
                                 selectizeInput("prof_role", "Role(s):",
@@ -199,10 +199,9 @@ ui <- dashboardPage(
                                                multiple = TRUE)
                          ),
                          column(width = 4,
-                                textInput("prof_name", "Name (Optional):")
+                                textInput("prof_name", "Name:")
                          )
                        ),
-                       
                        fluidRow(
                          column(width = 12,
                                 h4("Professional Database"),
@@ -215,7 +214,6 @@ ui <- dashboardPage(
           )
         )
       ),
-      
       # GEAR DATABASE ---------------------------------------------------------
       tabItem(
         tabName = "gear_database",
@@ -242,11 +240,10 @@ server <- function(input, output, session) {
     req(session$userData$auth0_info$name)
     user_email <- session$userData$auth0_info$name
     row_data <- members_df %>% filter(email == user_email)
-    
     if (nrow(row_data) == 0) {
       "User"
     } else {
-      row_data$permissions[1]  # e.g. "Admin", "Member", "Student", "User"
+      row_data$permissions[1]
     }
   })
   
@@ -259,9 +256,8 @@ server <- function(input, output, session) {
       selectInput("view_as", 
                   label = "View as:",
                   choices = c("User", "Student", "Member"),
-                  selected = "Member")  # default selection if you wish
+                  selected = "Member")
     } else {
-      # Non-admin => show nothing
       NULL
     }
   })
@@ -269,24 +265,13 @@ server <- function(input, output, session) {
   # --------------------------------
   # C) Effective role
   # --------------------------------
-  # If not admin => just return actual role
-  # If admin => check the input$view_as (User, Student, Member)
-  # If user hasn't chosen anything, default to "admin"
   effective_role <- reactive({
     real_role <- tolower(actual_user_role())
     if (real_role != "admin") {
-      return(real_role)  # user is not admin => no simulation
+      real_role
     } else {
-      # user is admin => check the "view_as" input
-      req(real_role)  # just in case
-      selected <- input$view_as  # "User", "Student", "Member" or NULL
-      if (is.null(selected)) {
-        # if not set => treat as "admin"
-        return("admin")
-      } else {
-        # Otherwise, use that
-        return(tolower(selected))
-      }
+      req(input$view_as)
+      tolower(input$view_as)
     }
   })
   
@@ -294,7 +279,6 @@ server <- function(input, output, session) {
   # D) Greet user
   # --------------------------------
   output$user_greeting <- renderText({
-    # Show actual name & role
     user_email <- session$userData$auth0_info$name
     row_data <- members_df %>% filter(email == user_email)
     if (nrow(row_data) == 0) {
@@ -305,22 +289,64 @@ server <- function(input, output, session) {
     }
   })
   
+  # --------------------------------
+  # E) Professional Explanation
+  # --------------------------------
+  output$prof_explanation <- renderUI({
+    role_now <- effective_role()
+    if (role_now %in% c("admin", "member")) {
+      tagList(
+        p("Welcome to the Professional Database! Thank you for support as a paid member! 805 Film Co could not exist without you.",
+          style = "font-weight: bold; color: #113140;"),
+        "This is the ultimate rolodex with over 500+ local film professionals (growing weekly!), so you can nurture your local network. Only paying members are able to access the entire database.",
+        tags$u("Mass emails to all Members are not allowed."),
+        " If you want to share something with the wider Collective, please contact ",
+        tags$a("hello@805filmco.com" )
+      )
+    } else {
+      tagList(
+        p("Welcome to the Professional Database! Thank you for support as a paid member! 805 Film Co could not exist without you.",
+          style = "font-weight: bold; color: #113140;"),
+        "This is the ultimate rolodex with over 500+ local film professionals (growing weekly!), so you can nurture your local network. Only paying members are able to access the entire database.",
+        tags$u("Mass emails to all Members are not allowed."),
+        " If you want to share something with the wider Collective, please contact ",
+        tags$a("hello@805filmco.com" ),
+        br(),
+        p(span("Upgrade to paid membership to have access to entire database.", style = "font-weight: bold; color: #880808;"))
+      )
+    }
+  })
+  
   # ============================================================================
   # COMMUNITY BOARD
   # ============================================================================
-  # Show post button vs. free message based on effective role
   output$post_button_ui <- renderUI({
-    role_now <- effective_role()  # "admin", "member", "student", "user"
+    role_now <- effective_role()
     if (role_now %in% c("admin", "member")) {
       tagList(
-        p("Thank you for support as a paid member! 805 Film Co could not exist without you!",
+        p("Welcome to the Community Board! Thank you for support as a paid member! 805 Film Co could not exist without you!",
           style = "font-weight: bold; color: #113140;"),
+        "Think of it as a specialized bulletin board for film professionals. You can see & post things here for the Collective to see, including but not limited to: Job Posts (both seeking and offering), Offices for Rent, Film Festival Calls for Submissions, and other Queries.",
+        tags$u("Anyone"),
+        " can see the Community Board, but ",
+        tags$u("only paying members"),
+        " can post. Posts are monitored & archived after 30 days.",
+        br(),
+        br(),
         actionButton("cb_new_post", "Add a New Post", icon = icon("plus"),
                      style = "color: #fff; background-color: #113140; border-color: #2e6da4")
       )
     } else {
-      p("Upgrade to a paid membership to be able to post to the community board.",
-        style = "font-weight: bold; color: #113140;")
+      tagList(
+        "Think of it as a specialized bulletin board for film professionals. You can see & post things here for the Collective to see, including but not limited to: Job Posts (both seeking and offering), Offices for Rent, Film Festival Calls for Submissions, and other Queries.",
+        tags$u("Anyone"),
+        " can see the Community Board, but ",
+        tags$u("only paying members"),
+        " can post. Posts are monitored & archived after 30 days.",
+        br(),
+        br(),
+        p(span("Upgrade to paid membership to have access to post.", style = "font-weight: bold; color: #880808;"))
+      )
     }
   })
   
@@ -362,7 +388,6 @@ server <- function(input, output, session) {
   observeEvent(input$cb_table_rows_selected, {
     req(input$cb_table_rows_selected)
     sel_row <- input$cb_table_rows_selected
-    # Get sorted data row corresponding to selection
     entry <- board_entries[[ cb_data_sorted$row_order[sel_row] ]]
     
     output$cb_modal_text <- renderUI({
@@ -424,14 +449,12 @@ server <- function(input, output, session) {
     showModal(
       modalDialog(
         title = "Add a New Community Post",
-        
         fluidRow(
           column(width = 6,
                  selectInput("cb_post_type", "Type:",
                              choices = c("Job-Offering", "Job-Seeking", "Office-Offering", "Office-Seeking", "Festival", "Other"))
           )
         ),
-        
         conditionalPanel(
           "input.cb_post_type == 'Job-Offering' || input.cb_post_type == 'Job-Seeking'",
           fluidRow(
@@ -446,7 +469,6 @@ server <- function(input, output, session) {
             column(width = 12, textAreaInput("cb_job_desc", "Job Description:", height = "100px"))
           )
         ),
-        
         conditionalPanel(
           "input.cb_post_type == 'Office-Offering' || input.cb_post_type == 'Office-Seeking'",
           fluidRow(
@@ -460,7 +482,6 @@ server <- function(input, output, session) {
             column(width = 12, textAreaInput("cb_office_desc", "Description:", height = "100px"))
           )
         ),
-        
         conditionalPanel(
           "input.cb_post_type == 'Festival'",
           fluidRow(
@@ -475,7 +496,6 @@ server <- function(input, output, session) {
             column(width = 12, textAreaInput("cb_fest_desc", "Description:", height = "100px"))
           )
         ),
-        
         conditionalPanel(
           "input.cb_post_type == 'Other'",
           fluidRow(
@@ -486,7 +506,6 @@ server <- function(input, output, session) {
             column(width = 12, textAreaInput("cb_other_desc", "Description:", height = "100px"))
           )
         ),
-        
         footer = tagList(
           modalButton("Cancel"),
           actionButton("cb_submit_post", "Submit", icon = icon("paper-plane"),
@@ -553,13 +572,11 @@ server <- function(input, output, session) {
                        )
     )
     
-    # Validate
     if (is.null(new_post$title) || new_post$title == "") {
       shinyalert("Error", "Please enter a title.", type = "error")
       return()
     }
     
-    # Append to Google Sheets
     df_append <- data.frame(
       entries = paste0("'", toJSON(new_post), "'")
     )
@@ -572,20 +589,7 @@ server <- function(input, output, session) {
   # ============================================================================
   # LOCAL PROFESSIONALS
   # ============================================================================
-  
-  # Explanation text (paid vs free)
-  output$prof_explanation <- renderUI({
-    role_now <- effective_role()  # "admin", "member", "student", "user"
-    if (role_now %in% c("admin", "member")) {
-      p("Contact info is displayed for paid members. Thank you for your support!",
-        style = "color: #113140; font-weight: bold;")
-    } else {
-      p("Upgrade to a paid membership to view contact info.",
-        style = "color: #113140; font-weight: bold;")
-    }
-  })
-  
-  # Filter professionals
+  # Reactive filtering for Professionals table based on inputs
   prof_filtered <- reactive({
     data_in <- prof_db
     if (!is.null(input$prof_role) && length(input$prof_role) > 0) {
@@ -595,36 +599,61 @@ server <- function(input, output, session) {
       data_in <- data_in %>% filter(grepl(paste(input$prof_loc, collapse = "|"), location))
     }
     data_in <- data_in %>% filter(grepl(input$prof_name, name, ignore.case = TRUE))
-    
+    # For "user" privileges, show only rows where membership is not empty
+    if (effective_role() == "user") {
+      data_in <- data_in %>% filter(membership != "")
+    }
     data_in
   })
   
-  observe({
-    if (nrow(prof_filtered()) == 0) {
-      output$prof_error <- renderText("No results found.")
-    } else {
-      output$prof_error <- renderText("")
-    }
+  output$prof_error <- renderText({
+    if (nrow(prof_filtered()) == 0) "No results found." else ""
   })
   
   output$prof_table <- renderDT({
-    role_now <- effective_role()
     data_show <- prof_filtered()
     if (nrow(data_show) == 0) return(NULL)
-    
-    # If role is not admin or member => hide contact info
-    if (!(role_now %in% c("admin", "member"))) {
-      data_show <- data_show %>% select(name, role, company, location, website)
-    }
+    # Select and order columns: membership, name, role, location, website
+    data_show <- data_show %>% select(membership, name, role, location, website)
+    colnames(data_show) <- c("Membership", "Name", "Role", "Location", "Website")
     datatable(data_show,
               rownames = FALSE,
+              selection = "single",
               options = list(
                 dom = "t",
                 pageLength = 100,
                 autoWidth = TRUE
               ),
+              escape = FALSE,
               class = "stripe"
     )
+  })
+  
+  observeEvent(input$prof_table_rows_selected, {
+    req(input$prof_table_rows_selected)
+    sel_row <- input$prof_table_rows_selected
+    selected_prof <- prof_filtered()[sel_row, ]
+    
+    output$prof_modal_text <- renderUI({
+      HTML(paste(
+        "<b>Name:</b>", selected_prof$name,
+        "<b>Role:</b>", selected_prof$role,
+        "<b>Company:</b>", selected_prof$company,
+        "<b>Location:</b>", selected_prof$location,
+        "<b>Email:</b>", selected_prof$email,
+        "<b>Website:</b>", selected_prof$website,
+        "<b>Social:</b>", selected_prof$social,
+        "<b>Phone:</b>", selected_prof$phone,
+        sep = "<br>"
+      ))
+    })
+    
+    showModal(modalDialog(
+      title = "Professional Details",
+      uiOutput("prof_modal_text"),
+      easyClose = TRUE,
+      size = "m"
+    ))
   })
 }
 
