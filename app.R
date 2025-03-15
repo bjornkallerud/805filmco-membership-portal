@@ -26,6 +26,22 @@ make_list <- function(row) {
 }
 board_entries <- lapply(seq_len(nrow(db)), make_list)
 
+# Build data for table with sorting: include Date and row order
+cb_data <- do.call(rbind, lapply(seq_along(board_entries), function(i) {
+  entry <- board_entries[[i]]
+  data.frame(
+    Date = if("date" %in% names(entry)) entry$date else NA,
+    Type = entry$type,
+    Title = entry$title,
+    row_order = i,
+    stringsAsFactors = FALSE
+  )
+}))
+# Parse dates using the new format "mm-dd-YYYY"
+cb_data$Date_parsed <- as.Date(cb_data$Date, format = "%m-%d-%Y")
+cb_data_sorted <- cb_data %>% arrange(desc(Date_parsed), desc(row_order))
+cb_data_display <- cb_data_sorted %>% select(Date, Type, Title)
+
 # --- Professionals data (sheet: "Professionals") ---
 prof_db <- read_sheet(google_doc, sheet = "Professionals") %>%
   select(1:9) %>%
@@ -120,6 +136,13 @@ ui <- dashboardPage(
               tabPanel("Community Board",
                        uiOutput("post_button_ui"),
                        br(),
+                       fluidRow(
+                         column(4,
+                                selectizeInput("cb_type", "Filter by Type:",
+                                               choices = c("Job-Offering", "Job-Seeking", "Office-Offering", "Office-Seeking", "Festival", "Other"),
+                                               multiple = TRUE, options = list(placeholder = 'Select type(s)'))
+                         )
+                       ),
                        DTOutput("cb_table"),
                        br()
               ),
@@ -184,7 +207,7 @@ ui <- dashboardPage(
                          column(width = 12,
                                 h4("Professional Database"),
                                 div(style = 'color:red', textOutput("prof_error")),
-                                div(style = 'overflow-x: scroll', tableOutput("prof_table"))
+                                div(style = 'overflow-x: scroll', DTOutput("prof_table"))
                          )
                        )
               )
@@ -248,7 +271,7 @@ server <- function(input, output, session) {
   # --------------------------------
   # If not admin => just return actual role
   # If admin => check the input$view_as (User, Student, Member)
-  # If user hasn't chosen anything, default to "Admin"
+  # If user hasn't chosen anything, default to "admin"
   effective_role <- reactive({
     real_role <- tolower(actual_user_role())
     if (real_role != "admin") {
@@ -301,16 +324,18 @@ server <- function(input, output, session) {
     }
   })
   
-  # Build data for table
-  cb_data <- data.frame(
-    type  = unlist(lapply(board_entries, \(x) x$type)),
-    title = unlist(lapply(board_entries, \(x) x$title))
-  ) %>%
-    setNames(c("Type", "Title"))
+  # Reactive filtering for Community Board based on Type filter input
+  cb_filtered_data <- reactive({
+    if (is.null(input$cb_type) || length(input$cb_type) == 0) {
+      cb_data_display
+    } else {
+      cb_data_display %>% filter(Type %in% input$cb_type)
+    }
+  })
   
   output$cb_table <- renderDT({
     datatable(
-      cb_data,
+      cb_filtered_data(),
       rownames = FALSE,
       selection = "single",
       options = list(
@@ -337,41 +362,51 @@ server <- function(input, output, session) {
   observeEvent(input$cb_table_rows_selected, {
     req(input$cb_table_rows_selected)
     sel_row <- input$cb_table_rows_selected
-    entry <- board_entries[[sel_row]]
+    # Get sorted data row corresponding to selection
+    entry <- board_entries[[ cb_data_sorted$row_order[sel_row] ]]
     
     output$cb_modal_text <- renderUI({
       if (is.null(entry)) return(NULL)
-      switch(entry$type,
-             "Job" = HTML(paste(
-               "<b>Title</b>:", entry$title,
-               "<b>Dates</b>:", entry$dates,
-               "<b>Rate</b>:", entry$rate,
-               "<b>Contact</b>:", entry$contact,
-               "<b>Description</b>:", entry$desc,
-               sep = "<br>"
-             )),
-             "Office" = HTML(paste(
-               "<b>Title</b>:", entry$title,
-               "<b>Cost</b>:", entry$cost,
-               "<b>Contact</b>:", entry$contact,
-               "<b>Description</b>:", entry$desc,
-               sep = "<br>"
-             )),
-             "Festival" = HTML(paste(
-               "<b>Title</b>:", entry$title,
-               "<b>Link</b>:", entry$link,
-               "<b>Deadline</b>:", entry$due_dates,
-               "<b>Fees</b>:", entry$fees,
-               "<b>Contact</b>:", entry$contact,
-               "<b>Description</b>:", entry$desc,
-               sep = "<br>"
-             )),
-             "Other" = HTML(paste(
-               "<b>Title</b>:", entry$title,
-               "<b>Description</b>:", entry$desc,
-               sep = "<br>"
-             )),
-             "Unknown Type")
+      if (entry$type %in% c("Job-Offering", "Job-Seeking")) {
+        HTML(paste(
+          "<b>Title</b>:", entry$title,
+          "<b>Dates</b>:", entry$dates,
+          "<b>Rate</b>:", entry$rate,
+          "<b>Contact</b>:", entry$contact,
+          "<b>Description</b>:", entry$desc,
+          if(!is.null(entry$date)) paste("<b>Date</b>:", entry$date) else "",
+          sep = "<br>"
+        ))
+      } else if (entry$type %in% c("Office-Offering", "Office-Seeking")) {
+        HTML(paste(
+          "<b>Title</b>:", entry$title,
+          "<b>Cost</b>:", entry$cost,
+          "<b>Contact</b>:", entry$contact,
+          "<b>Description</b>:", entry$desc,
+          if(!is.null(entry$date)) paste("<b>Date</b>:", entry$date) else "",
+          sep = "<br>"
+        ))
+      } else if (entry$type == "Festival") {
+        HTML(paste(
+          "<b>Title</b>:", entry$title,
+          "<b>Link</b>:", entry$link,
+          "<b>Deadline</b>:", entry$due_dates,
+          "<b>Contact</b>:", entry$contact,
+          "<b>Description</b>:", entry$desc,
+          if(!is.null(entry$date)) paste("<b>Date</b>:", entry$date) else "",
+          sep = "<br>"
+        ))
+      } else if (entry$type == "Other") {
+        HTML(paste(
+          "<b>Title</b>:", entry$title,
+          "<b>Contact</b>:", entry$contact,
+          "<b>Description</b>:", entry$desc,
+          if(!is.null(entry$date)) paste("<b>Date</b>:", entry$date) else "",
+          sep = "<br>"
+        ))
+      } else {
+        "Unknown Type"
+      }
     })
     
     showModal(
@@ -393,11 +428,12 @@ server <- function(input, output, session) {
         fluidRow(
           column(width = 6,
                  selectInput("cb_post_type", "Type:",
-                             choices = c("Job", "Office", "Festival", "Other")))
+                             choices = c("Job-Offering", "Job-Seeking", "Office-Offering", "Office-Seeking", "Festival", "Other"))
+          )
         ),
         
         conditionalPanel(
-          "input.cb_post_type == 'Job'",
+          "input.cb_post_type == 'Job-Offering' || input.cb_post_type == 'Job-Seeking'",
           fluidRow(
             column(width = 6, textInput("cb_job_title", "Job Title:")),
             column(width = 6, textInput("cb_job_dates", "Dates:"))
@@ -412,7 +448,7 @@ server <- function(input, output, session) {
         ),
         
         conditionalPanel(
-          "input.cb_post_type == 'Office'",
+          "input.cb_post_type == 'Office-Offering' || input.cb_post_type == 'Office-Seeking'",
           fluidRow(
             column(width = 6, textInput("cb_office_title", "Office Title:")),
             column(width = 6, textInput("cb_office_cost", "Cost:"))
@@ -465,20 +501,39 @@ server <- function(input, output, session) {
     if (is.null(input$cb_post_type)) return(NULL)
     
     new_post <- switch(input$cb_post_type,
-                       "Job" = list(
-                         type    = "Job",
+                       "Job-Offering" = list(
+                         type    = "Job-Offering",
                          title   = input$cb_job_title,
                          dates   = input$cb_job_dates,
                          rate    = input$cb_job_rate,
                          contact = input$cb_job_contact,
-                         desc    = input$cb_job_desc
+                         desc    = input$cb_job_desc,
+                         date    = format(Sys.Date(), "%m-%d-%Y")
                        ),
-                       "Office" = list(
-                         type    = "Office",
+                       "Job-Seeking" = list(
+                         type    = "Job-Seeking",
+                         title   = input$cb_job_title,
+                         dates   = input$cb_job_dates,
+                         rate    = input$cb_job_rate,
+                         contact = input$cb_job_contact,
+                         desc    = input$cb_job_desc,
+                         date    = format(Sys.Date(), "%m-%d-%Y")
+                       ),
+                       "Office-Offering" = list(
+                         type    = "Office-Offering",
                          title   = input$cb_office_title,
                          cost    = input$cb_office_cost,
                          contact = input$cb_office_contact,
-                         desc    = input$cb_office_desc
+                         desc    = input$cb_office_desc,
+                         date    = format(Sys.Date(), "%m-%d-%Y")
+                       ),
+                       "Office-Seeking" = list(
+                         type    = "Office-Seeking",
+                         title   = input$cb_office_title,
+                         cost    = input$cb_office_cost,
+                         contact = input$cb_office_contact,
+                         desc    = input$cb_office_desc,
+                         date    = format(Sys.Date(), "%m-%d-%Y")
                        ),
                        "Festival" = list(
                          type      = "Festival",
@@ -486,13 +541,15 @@ server <- function(input, output, session) {
                          due_dates = input$cb_fest_deadline,
                          link      = input$cb_fest_link,
                          contact   = input$cb_fest_contact,
-                         desc      = input$cb_fest_desc
+                         desc      = input$cb_fest_desc,
+                         date      = format(Sys.Date(), "%m-%d-%Y")
                        ),
                        "Other" = list(
                          type    = "Other",
                          title   = input$cb_other_title,
                          contact = input$cb_other_contact,
-                         desc    = input$cb_other_desc
+                         desc    = input$cb_other_desc,
+                         date    = format(Sys.Date(), "%m-%d-%Y")
                        )
     )
     
@@ -550,16 +607,24 @@ server <- function(input, output, session) {
     }
   })
   
-  output$prof_table <- renderTable({
+  output$prof_table <- renderDT({
     role_now <- effective_role()
     data_show <- prof_filtered()
     if (nrow(data_show) == 0) return(NULL)
     
-    # If role is not admin or member => hide contact
+    # If role is not admin or member => hide contact info
     if (!(role_now %in% c("admin", "member"))) {
       data_show <- data_show %>% select(name, role, company, location, website)
     }
-    data_show
+    datatable(data_show,
+              rownames = FALSE,
+              options = list(
+                dom = "t",
+                pageLength = 100,
+                autoWidth = TRUE
+              ),
+              class = "stripe"
+    )
   })
 }
 
