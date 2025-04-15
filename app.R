@@ -220,7 +220,7 @@ ui <- dashboardPage(
                                    column(12,
                                           h4("Professional Database"),
                                           div(style = 'color:red', textOutput("prof_error")),
-                                          div(style = 'overflow-x: scroll', DTOutput("prof_table"))
+                                          div(style = 'overflow-x: scroll; max-height: 600px; overflow-y: auto;', DTOutput("prof_table"))
                                    )
                                  )
                         )
@@ -886,10 +886,17 @@ server <- function(input, output, session) {
     datatable(data_show,
               rownames = FALSE,
               selection = "single",
-              options = list(dom = "t", pageLength = 100, autoWidth = TRUE),
+              options = list(
+                dom = "t",
+                autoWidth = TRUE,
+                scrollY = "500px",
+                scrollCollapse = TRUE,
+                paging = FALSE
+              ),
               escape = FALSE,
               class = "stripe")
   })
+  
   
   observeEvent(input$prof_table_rows_selected, {
     req(input$prof_table_rows_selected)
